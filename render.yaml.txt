@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: warehouse-streamlit
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run warehouse_zone_optimizer.py --server.port $PORT --server.address 0.0.0.0
