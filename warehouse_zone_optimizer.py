@@ -2,121 +2,130 @@
 
 import streamlit as st
 import googlemaps
-from datetime import datetime, timedelta
-import pandas as pd
+from datetime import datetime
 from geopy.distance import geodesic
+import os
 
 # ===============================
 # CONFIG
 # ===============================
-import os
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 WAREHOUSE_ADDRESS = "198 Morris Rd, Schenectady, NY"
-MAX_ZONES = 10
+MAX_DRIVERS = 10
 MAX_DELIVERY_HOURS = 2  # 2 hours
 
-# Initialize Google Maps client
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 
-# Initialize session state
+# ===============================
+# SESSION STATE
+# ===============================
 if "orders" not in st.session_state:
-    st.session_state.orders = []  # List of dicts: {address, timestamp}
+    st.session_state.orders = []
 
 # ===============================
-# Helper Functions
+# HELPER FUNCTIONS
 # ===============================
-
 def get_travel_time(origin, destination):
-    """Return travel time in minutes using Google Maps Directions API"""
     try:
-        directions = gmaps.directions(origin, destination, mode="driving", departure_time=datetime.now())
+        directions = gmaps.directions(
+            origin,
+            destination,
+            mode="driving",
+            departure_time=datetime.now()
+        )
         if directions:
-            duration_sec = directions[0]['legs'][0]['duration']['value']
-            return duration_sec / 60  # minutes
+            return directions[0]["legs"][0]["duration"]["value"] / 60
     except Exception as e:
-        st.warning(f"Error fetching travel time: {e}")
+        st.warning(f"Google Maps error: {e}")
     return None
+
 
 def get_coordinates(address):
-    """Return (lat, lng) tuple for an address"""
-    geocode_result = gmaps.geocode(address)
-    if geocode_result:
-        location = geocode_result[0]['geometry']['location']
-        return (location['lat'], location['lng'])
+    result = gmaps.geocode(address)
+    if result:
+        loc = result[0]["geometry"]["location"]
+        return (loc["lat"], loc["lng"])
     return None
 
-def assign_zones(orders):
-    """Assign orders into ZONE 1-10 based on distance clustering and delivery time"""
-    zones = {f"ZONE {i+1}": [] for i in range(MAX_ZONES)}
+
+def assign_drivers(orders):
+    drivers = {f"DRIVER {i+1}": [] for i in range(MAX_DRIVERS)}
     warehouse_coord = get_coordinates(WAREHOUSE_ADDRESS)
 
-    # Sort orders by timestamp (first come first serve)
-    sorted_orders = sorted(orders, key=lambda x: x['timestamp'])
+    sorted_orders = sorted(orders, key=lambda x: x["timestamp"])
 
     for order in sorted_orders:
-        order_coord = get_coordinates(order['address'])
+        order_coord = get_coordinates(order["address"])
         if not order_coord:
             continue
 
-        # Check if delivery within 2 hours from now
-        travel_minutes = get_travel_time(WAREHOUSE_ADDRESS, order['address'])
-        if travel_minutes is None or travel_minutes > MAX_DELIVERY_HOURS * 60:
-            continue  # Skip orders that exceed 2 hours
+        travel_minutes = get_travel_time(WAREHOUSE_ADDRESS, order["address"])
+        if not travel_minutes or travel_minutes > MAX_DELIVERY_HOURS * 60:
+            continue
 
-        # Assign to best ZONE
-        best_zone = None
-        min_avg_distance = float("inf")
-        for zone_name, zone_orders in zones.items():
-            if len(zone_orders) == 0:
+        best_driver = None
+        min_distance = float("inf")
+
+        for driver, driver_orders in drivers.items():
+            if not driver_orders:
                 avg_distance = geodesic(warehouse_coord, order_coord).miles
             else:
-                distances = [geodesic(get_coordinates(o['address']), order_coord).miles for o in zone_orders]
-                avg_distance = sum(distances)/len(distances)
-            if avg_distance < min_avg_distance:
-                min_avg_distance = avg_distance
-                best_zone = zone_name
-        
-        if best_zone:
-            zones[best_zone].append(order)
+                distances = [
+                    geodesic(get_coordinates(o["address"]), order_coord).miles
+                    for o in driver_orders
+                ]
+                avg_distance = sum(distances) / len(distances)
 
-    # Sort orders inside each zone based on delivery priority (earliest first)
-    for zone_name, zone_orders in zones.items():
-        zone_orders.sort(key=lambda x: x['timestamp'])
-    return zones
+            if avg_distance < min_distance:
+                min_distance = avg_distance
+                best_driver = driver
 
-def clear_delivered_orders(delivered_orders):
-    st.session_state.orders = [o for o in st.session_state.orders if o not in delivered_orders]
+        if best_driver:
+            drivers[best_driver].append(order)
+
+    for driver in drivers:
+        drivers[driver].sort(key=lambda x: x["timestamp"])
+
+    return drivers
+
+
+def clear_orders(delivered_orders):
+    st.session_state.orders = [
+        o for o in st.session_state.orders if o not in delivered_orders
+    ]
 
 # ===============================
-# Streamlit App UI
+# STREAMLIT UI
 # ===============================
 st.title("TYPE IT IN GENE")
 
-# Input new order
 st.subheader("Add New Order")
-new_address = st.text_input("Enter Customer Address:")
+new_address = st.text_input("Enter Customer Address")
+
 if st.button("Add Order"):
     if new_address:
-        st.session_state.orders.append({"address": new_address, "timestamp": datetime.now()})
-        st.success(f"Order added: {new_address}")
+        st.session_state.orders.append(
+            {"address": new_address, "timestamp": datetime.now()}
+        )
+        st.success(f"Added: {new_address}")
 
-# Assign zones
-zones = assign_zones(st.session_state.orders)
+drivers = assign_drivers(st.session_state.orders)
 
-# Display zones
-st.subheader("Delivery Zones")
-for zone_name, zone_orders in zones.items():
-    if zone_orders:
-        st.markdown(f"**{zone_name}**")
-        for idx, order in enumerate(zone_orders):
-            st.write(f"{idx+1}. {order['address']} (Added: {order['timestamp'].strftime('%H:%M:%S')})")
+st.subheader("Driver Assignments")
 
-# DONE button
-if st.button("DONE"):
-    delivered_orders = []
-    for zone_orders in zones.values():
-        delivered_orders.extend(zone_orders)
-    clear_delivered_orders(delivered_orders)
-    st.success("Delivered orders cleared.")
+for driver_name, driver_orders in drivers.items():
+    if not driver_orders:
+        continue
 
-# Auto-refresh on new order
+    st.markdown(f"### 🚚 {driver_name}")
+
+    for i, order in enumerate(driver_orders, 1):
+        st.write(
+            f"{i}. {order['address']} "
+            f"(Added: {order['timestamp'].strftime('%H:%M:%S')})"
+        )
+
+    if st.button(f"DONE - {driver_name}", key=driver_name):
+        clear_orders(driver_orders)
+        st.success(f"{driver_name} completed deliveries")
+        st.experimental_rerun()
