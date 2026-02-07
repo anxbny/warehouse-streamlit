@@ -49,7 +49,7 @@ def get_coordinates(address):
 
 
 def assign_drivers(orders):
-    drivers = {f"DRIVER {i+1}": [] for i in range(MAX_DRIVERS)}
+    drivers = {f"DRIVER {i+1}": [] for i in range(MAX_DRIVERS=11)}
     warehouse_coord = get_coordinates(WAREHOUSE_ADDRESS)
 
     sorted_orders = sorted(orders, key=lambda x: x["timestamp"])
@@ -129,3 +129,4 @@ for driver_name, driver_orders in drivers.items():
         clear_orders(driver_orders)
         st.success(f"{driver_name} completed deliveries")
         st.experimental_rerun()
+
