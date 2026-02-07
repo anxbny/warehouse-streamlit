@@ -71,4 +71,70 @@ def assign_drivers(orders):
 
         for driver, driver_orders in drivers.items():
             if not driver_orders:
-                avg_dis_
+                avg_distance = geodesic(warehouse_coord, order_coord).miles
+            else:
+                distances = [
+                    geodesic(get_coordinates(o["address"]), order_coord).miles
+                    for o in driver_orders
+                ]
+                avg_distance = sum(distances) / len(distances)
+
+            if avg_distance < min_distance:
+                min_distance = avg_distance
+                best_driver = driver
+
+        if best_driver:
+            drivers[best_driver].append(order)
+
+    for driver in drivers:
+        drivers[driver].sort(key=lambda x: x["timestamp"])
+
+    return drivers
+
+
+# ===============================
+# STREAMLIT UI
+# ===============================
+st.title("Order Classification")
+
+st.subheader("Add New Order")
+new_address = st.text_input("Enter Customer Address")
+
+if st.button("Add Order"):
+    if new_address:
+        st.session_state.orders.append(
+            {"address": new_address, "timestamp": datetime.now()}
+        )
+        st.success(f"Added: {new_address}")
+
+# Only consider orders that are not delivered yet
+active_orders = [
+    o for o in st.session_state.orders
+    if all(o not in st.session_state.delivered_orders[d] for d in st.session_state.delivered_orders)
+]
+
+drivers = assign_drivers(active_orders)
+
+st.subheader("Driver Assignments")
+
+# Only show drivers that have pending orders
+for driver_name, driver_orders in drivers.items():
+    # Filter out delivered orders
+    pending_orders = [o for o in driver_orders if o not in st.session_state.delivered_orders[driver_name]]
+
+    if not pending_orders:
+        continue  # Skip drivers with no pending orders
+
+    st.markdown(f"### 🚚 {driver_name}")
+
+    for i, order in enumerate(pending_orders, 1):
+        st.write(
+            f"{i}. {order['address']} "
+            f"(Added: {order['timestamp'].strftime('%H:%M:%S')})"
+        )
+
+    # DONE button updates only this driver
+    if st.button(f"DONE - {driver_name}", key=driver_name):
+        st.session_state.delivered_orders[driver_name].extend(pending_orders)
+        st.success(f"{driver_name} completed deliveries")
+        st.experimental_rerun()
