@@ -11,7 +11,7 @@ import os
 # ===============================
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 WAREHOUSE_ADDRESS = "198 Morris Rd, Schenectady, NY"
-MAX_DRIVERS = 10
+MAX_DRIVERS = 11
 MAX_DELIVERY_HOURS = 2  # 2 hours
 
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
@@ -49,7 +49,7 @@ def get_coordinates(address):
 
 
 def assign_drivers(orders):
-    drivers = {f"DRIVER {i+1}": [] for i in range(MAX_DRIVERS=11)}
+    drivers = {f"DRIVER {i+1}": [] for i in range(MAX_DRIVERS)}
     warehouse_coord = get_coordinates(WAREHOUSE_ADDRESS)
 
     sorted_orders = sorted(orders, key=lambda x: x["timestamp"])
@@ -97,7 +97,7 @@ def clear_orders(delivered_orders):
 # ===============================
 # STREAMLIT UI
 # ===============================
-st.title("TYPE IT IN GENE")
+st.title("Order Classification")
 
 st.subheader("Add New Order")
 new_address = st.text_input("Enter Customer Address")
@@ -114,19 +114,20 @@ drivers = assign_drivers(st.session_state.orders)
 st.subheader("Driver Assignments")
 
 for driver_name, driver_orders in drivers.items():
-    if not driver_orders:
-        continue
-
     st.markdown(f"### 🚚 {driver_name}")
 
-    for i, order in enumerate(driver_orders, 1):
-        st.write(
-            f"{i}. {order['address']} "
-            f"(Added: {order['timestamp'].strftime('%H:%M:%S')})"
-        )
+    if driver_orders:
+        for i, order in enumerate(driver_orders, 1):
+            st.write(
+                f"{i}. {order['address']} "
+                f"(Added: {order['timestamp'].strftime('%H:%M:%S')})"
+            )
+    else:
+        st.info("No orders assigned")
 
-    if st.button(f"DONE - {driver_name}", key=driver_name):
+    if driver_orders and st.button(f"DONE - {driver_name}", key=driver_name):
         clear_orders(driver_orders)
         st.success(f"{driver_name} completed deliveries")
         st.experimental_rerun()
+
 
